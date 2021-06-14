@@ -194,7 +194,7 @@ inline T ramp(T r)
 { return smooth_step((r+1)/2)*2-1; }
 
 #ifdef WIN32
-inline int lround(double x)
+inline long lround(double x)
 {
    if(x>0)
       return (x-floor(x)<0.5) ? (int)floor(x) : (int)ceil(x);
