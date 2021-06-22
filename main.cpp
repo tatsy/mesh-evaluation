@@ -163,7 +163,8 @@ public:
             // Open
             std::ifstream reader(filename.c_str(), std::ios::binary);
             if (reader.fail()) {
-                throw std::runtime_error("Failed to open file: " + filename);
+                std::cerr << ("Failed to open file: " + filename) << std::endl;
+                return false;
             }
 
             // Read header
@@ -203,7 +204,7 @@ public:
             const size_t numVerts = vert_data->count;
             std::vector<float> raw_vertices(numVerts * 3);
             std::memcpy(raw_vertices.data(), vert_data->buffer.get(), sizeof(float) * numVerts * 3);
-            
+
             const size_t numFaces = face_data->count;
             std::vector<uint32_t> raw_indices(numFaces * 3);
             std::memcpy(raw_indices.data(), face_data->buffer.get(), sizeof(uint32_t) * numFaces * 3);
@@ -222,7 +223,10 @@ public:
             }
         } catch (const std::exception &e) {
             std::cerr << "Caught tinyply exception: " << e.what() << std::endl;
-        }        
+            return false;
+        }
+
+        return true;
     }
 
     /** \brief Write mesh to OFF file.
@@ -591,17 +595,17 @@ int main(int argc, char** argv) {
     std::map<int, fs::path> reference_files;
 
     if (fs::is_regular_file(input)) {
-        if (input.extension().string() != ".off") {
-            std::cout << "Only OFF files supported as input." << std::endl;
+        if (input.extension().string() != ".off" && input.extension().string() != ".ply") {
+            std::cout << "Only OFF and PLY files supported as input." << std::endl;
             return 1;
         }
 
         input_files.insert(std::pair<int, fs::path>(0, input));
     } else {
-        read_directory(input, input_files, { ".off" });
+        read_directory(input, input_files, { ".off", ".ply" });
 
         if (input_files.size() <= 0) {
-            std::cout << "Could not find any OFF files in input directory." << std::endl;
+            std::cout << "Could not find any OFF and PLY files in input directory." << std::endl;
             return 1;
         }
 
@@ -609,17 +613,17 @@ int main(int argc, char** argv) {
     }
 
     if (fs::is_regular_file(reference)) {
-        if (reference.extension().string() != ".off" && reference.extension().string() != ".txt") {
-            std::cout << "Only OFF or TXT files supported as reference." << std::endl;
+        if (reference.extension().string() != ".off" && reference.extension().string() != ".ply" && reference.extension().string() != ".txt") {
+            std::cout << "Only OFF, PLY, or TXT files supported as reference." << std::endl;
             return 1;
         }
 
         reference_files.insert(std::pair<int, fs::path>(0, reference));
     } else {
-        read_directory(reference, reference_files, { ".off", ".txt" });
+        read_directory(reference, reference_files, { ".off", ".ply", ".txt" });
 
         if (input_files.size() <= 0) {
-            std::cout << "Could not find any OFF or TXT files in reference directory." << std::endl;
+            std::cout << "Could not find any OFF, PLY, or TXT files in reference directory." << std::endl;
             return 1;
         }
 
@@ -640,17 +644,29 @@ int main(int argc, char** argv) {
         fs::path input_file = input_files[n];
         fs::path reference_file = reference_files[n];
 
+        const std::string input_extension = input_file.extension().string();
+        const std::string reference_extension = reference_file.extension().string();
+
+        bool success = false;
         Mesh input_mesh;
-        bool success = Mesh::from_off(input_file.string(), input_mesh);
+        if (input_extension == ".off") {
+            success = Mesh::from_off(input_file.string(), input_mesh);
+        } else if (input_extension == ".ply") {
+            success = Mesh::from_ply(input_file.string(), input_mesh);
+        }
 
         if (!success) {
             std::cout << "Could not read " << input_file << "." << std::endl;
             return 1;
         }
 
-        if (reference_file.extension().string() == ".off") {
+        if (reference_extension == ".off" || reference_extension == ".ply") {
             Mesh reference_mesh;
-            success = Mesh::from_off(reference_file.string(), reference_mesh);
+            if (reference_extension == ".off") {
+                success = Mesh::from_off(reference_file.string(), reference_mesh);
+            } else if (reference_extension == ".ply") {
+                success = Mesh::from_ply(reference_file.string(), reference_mesh);
+            }
 
             if (!success) {
                 std::cout << "Could not read " << reference_file << "." << std::endl;
