@@ -24,6 +24,9 @@ namespace fs = std::filesystem;
 // Argument parser
 #include "argparse.h"
 
+#define TINYPLY_IMPLEMENTATION
+#include "triangle_point/tinyply.h"
+#include "triangle_point/vec.h"
 #include "triangle_point/poitri.h"
 
 /** \brief Compute triangle point distance and corresponding closest point.
@@ -150,6 +153,76 @@ public:
         delete file;
 
         return true;
+    }
+
+    static bool from_ply(const std::string &filename, Mesh &mesh) {
+        using tinyply::PlyFile;
+        using tinyply::PlyData;
+
+        try {
+            // Open
+            std::ifstream reader(filename.c_str(), std::ios::binary);
+            if (reader.fail()) {
+                throw std::runtime_error("Failed to open file: " + filename);
+            }
+
+            // Read header
+            PlyFile file;
+            file.parse_header(reader);
+
+            // Request vertex data
+            std::shared_ptr<PlyData> vert_data, norm_data, uv_data, face_data;
+            try {
+                vert_data = file.request_properties_from_element("vertex", { "x", "y", "z" });
+            } catch (std::exception &e) {
+                std::cerr << "tinyply exception: " << e.what() << std::endl;
+            }
+
+            try {
+                norm_data = file.request_properties_from_element("vertex", { "nx", "ny", "nz" });
+            } catch (std::exception &e) {
+                std::cerr << "tinyply exception: " << e.what() << std::endl;
+            }
+
+            try {
+                uv_data = file.request_properties_from_element("vertex", { "u", "v" });
+            } catch (std::exception &e) {
+                std::cerr << "tinyply exception: " << e.what() << std::endl;
+            }
+
+            try {
+                face_data = file.request_properties_from_element("face", { "vertex_indices" }, 3);
+            } catch (std::exception &e) {
+                std::cerr << "tinyply exception: " << e.what() << std::endl;
+            }
+
+            // Read vertex data
+            file.read(reader);
+
+            // Copy vertex data
+            const size_t numVerts = vert_data->count;
+            std::vector<float> raw_vertices(numVerts * 3);
+            std::memcpy(raw_vertices.data(), vert_data->buffer.get(), sizeof(float) * numVerts * 3);
+            
+            const size_t numFaces = face_data->count;
+            std::vector<uint32_t> raw_indices(numFaces * 3);
+            std::memcpy(raw_indices.data(), face_data->buffer.get(), sizeof(uint32_t) * numFaces * 3);
+
+            // Store in mesh
+            for (uint32_t i : raw_indices) {
+                Eigen::Vector3f v;
+                v << raw_vertices[i * 3 + 0], raw_vertices[i * 3 + 1], raw_vertices[i * 3 + 2];
+                mesh.add_vertex(v);
+            }
+
+            for (int i = 0; i < raw_indices.size(); i += 3) {
+                Eigen::Vector3i f;
+                f << raw_indices[i + 0], raw_indices[i + 1], raw_indices[i + 2];
+                mesh.add_face(f);
+            }
+        } catch (const std::exception &e) {
+            std::cerr << "Caught tinyply exception: " << e.what() << std::endl;
+        }        
     }
 
     /** \brief Write mesh to OFF file.
