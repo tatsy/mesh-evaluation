@@ -182,13 +182,13 @@ public:
             try {
                 norm_data = file.request_properties_from_element("vertex", { "nx", "ny", "nz" });
             } catch (std::exception &e) {
-                std::cerr << "tinyply exception: " << e.what() << std::endl;
+                // std::cerr << "tinyply exception: " << e.what() << std::endl;
             }
 
             try {
                 uv_data = file.request_properties_from_element("vertex", { "u", "v" });
             } catch (std::exception &e) {
-                std::cerr << "tinyply exception: " << e.what() << std::endl;
+                // std::cerr << "tinyply exception: " << e.what() << std::endl;
             }
 
             try {
@@ -536,7 +536,7 @@ bool Mesh::sample(const int N, PointCloud& point_cloud) const {
  * \param[out] files read file paths
  * \param[in] extension extension to filter for
  */
-void read_directory(const fs::path directory, std::map<int, fs::path>& files, const std::vector<std::string>& extensions) {
+void read_directory(const fs::path directory, std::map<std::string, fs::path>& files, const std::vector<std::string>& extensions) {
 
     files.clear();
     fs::directory_iterator end;
@@ -550,8 +550,8 @@ void read_directory(const fs::path directory, std::map<int, fs::path>& files, co
         }
 
         if (!filtered) {
-            int number = std::stoi(it->path().filename().string());
-            files.insert(std::pair<int, fs::path>(number, it->path()));
+            const std::string basename = it->path().filename().stem();
+            files.insert(std::make_pair(basename, it->path()));
         }
     }
 }
@@ -591,8 +591,8 @@ int main(int argc, char** argv) {
     const int N_points = parser.getInt("n_points");
     std::cout << "Using " << N_points << " points." << std::endl;
 
-    std::map<int, fs::path> input_files;
-    std::map<int, fs::path> reference_files;
+    std::map<std::string, fs::path> input_files;
+    std::map<std::string, fs::path> reference_files;
 
     if (fs::is_regular_file(input)) {
         if (input.extension().string() != ".off" && input.extension().string() != ".ply") {
@@ -600,7 +600,7 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        input_files.insert(std::pair<int, fs::path>(0, input));
+        input_files.insert(std::make_pair(input.filename().stem().string(), input));
     } else {
         read_directory(input, input_files, { ".off", ".ply" });
 
@@ -618,7 +618,7 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        reference_files.insert(std::pair<int, fs::path>(0, reference));
+        reference_files.insert(std::make_pair(reference.filename().stem().string(), reference));
     } else {
         read_directory(reference, reference_files, { ".off", ".ply", ".txt" });
 
@@ -630,19 +630,19 @@ int main(int argc, char** argv) {
         std::cout << "Read " << reference_files.size() << " reference files." << std::endl;
     }
 
-    std::map<int, float> accuracies;
-    std::map<int, float> completenesses;
+    std::map<std::string, float> accuracies;
+    std::map<std::string, float> completenesses;
 
-    for (std::map<int, fs::path>::iterator it = input_files.begin(); it != input_files.end(); it++) {
+    for (auto it = input_files.begin(); it != input_files.end(); it++) {
 
-        int n = it->first;
-        if (reference_files.find(n) == reference_files.end()) {
-            std::cout << "Could not find the reference file corresponding to " << input_files[n] << "." << std::endl;
+        const std::string basename = it->first;
+        if (reference_files.find(basename) == reference_files.end()) {
+            std::cout << "Could not find the reference file corresponding to " << input_files[basename] << "." << std::endl;
             return 1;
         }
 
-        fs::path input_file = input_files[n];
-        fs::path reference_file = reference_files[n];
+        fs::path input_file = input_files[basename];
+        fs::path reference_file = reference_files[basename];
 
         const std::string input_extension = input_file.extension().string();
         const std::string reference_extension = reference_file.extension().string();
@@ -681,7 +681,7 @@ int main(int argc, char** argv) {
                 success = input_point_cloud.compute_distance(reference_mesh, accuracy);
 
                 if (success) {
-                    accuracies[n] = accuracy;
+                    accuracies[basename] = accuracy;
                     std::cout << "Computed accuracy for " << input_file << "." << std::endl;
                 } else {
                     std::cout << "Could not compute accuracy for " << input_file << "." << std::endl;
@@ -698,7 +698,7 @@ int main(int argc, char** argv) {
                 success = reference_point_cloud.compute_distance(input_mesh, completeness);
 
                 if (success) {
-                    completenesses[n] = completeness;
+                    completenesses[basename] = completeness;
                     std::cout << "Computed completeness for " << input_file << "." << std::endl;
                 } else {
                     std::cout << "Could not compute completeness for " << input_file << "." << std::endl;
@@ -719,7 +719,7 @@ int main(int argc, char** argv) {
             success = reference_point_cloud.compute_distance(input_mesh, completeness);
 
             if (success) {
-                completenesses[n] = completeness;
+                completenesses[basename] = completeness;
                 std::cout << "Computed completeness for " << input_file << "." << std::endl;
             } else {
                 std::cout << "Could not compute completeness for " << input_file << "." << std::endl;
@@ -738,21 +738,21 @@ int main(int argc, char** argv) {
     float accuracy = 0;
     float completeness = 0;
 
-    for (std::map<int, fs::path>::iterator it = input_files.begin(); it != input_files.end(); it++) {
-        int n = it->first;
+    for (auto it = input_files.begin(); it != input_files.end(); it++) {
+        const std::string basename = it->first;
 
-        out << n << " ";
-        if (accuracies.find(n) != accuracies.end()) {
-            out << accuracies[n];
-            accuracy += accuracies[n];
+        out << basename << " ";
+        if (accuracies.find(basename) != accuracies.end()) {
+            out << accuracies[basename];
+            accuracy += accuracies[basename];
         } else {
             out << "-1";
         }
 
         out << " ";
-        if (completenesses.find(n) != completenesses.end()) {
-            out << completenesses[n];
-            completeness += completenesses[n];
+        if (completenesses.find(basename) != completenesses.end()) {
+            out << completenesses[basename];
+            completeness += completenesses[basename];
         } else {
             out << "-1";
         }
