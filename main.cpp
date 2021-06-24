@@ -24,6 +24,9 @@ namespace fs = std::filesystem;
 // Argument parser
 #include "argparse.h"
 
+// Progress bar
+#include "progress.h"
+
 #define TINYPLY_IMPLEMENTATION
 #include "triangle_point/tinyply.h"
 #include "triangle_point/vec.h"
@@ -660,7 +663,7 @@ int main(int argc, char** argv) {
     // Compute accuracy and completeness
     std::map<std::string, float> accuracies;
     std::map<std::string, float> completenesses;
-
+    ProgressBar pbar(input_files.size());
     for (auto it = input_files.begin(); it != input_files.end(); ++it) {
         const std::string basename = it->first;
         if (reference_files.find(basename) == reference_files.end()) {
@@ -754,6 +757,9 @@ int main(int argc, char** argv) {
         } else {
             std::cout << "Reference file " << reference_file << " has invalid extension." << std::endl;
         }
+
+        pbar.step();
+        printf("\n");
     }
 
     std::ofstream out(output.string().c_str(), std::ios::out);

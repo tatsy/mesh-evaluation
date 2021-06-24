@@ -17,5 +17,5 @@ if (OPENMP_FOUND)
 endif()
 
 include_directories(${Boost_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIR})
-add_executable(evaluate main.cpp argparse.h)
+add_executable(evaluate main.cpp argparse.h progress.h)
 target_link_libraries(evaluate ${Boost_LIBRARIES})
