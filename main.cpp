@@ -155,7 +155,7 @@ public:
         return true;
     }
 
-    static bool from_ply(const std::string &filename, Mesh &mesh) {
+    static bool from_ply(const std::string& filename, Mesh& mesh) {
         using tinyply::PlyFile;
         using tinyply::PlyData;
 
@@ -175,25 +175,29 @@ public:
             std::shared_ptr<PlyData> vert_data, norm_data, uv_data, face_data;
             try {
                 vert_data = file.request_properties_from_element("vertex", { "x", "y", "z" });
-            } catch (std::exception &e) {
+            }
+            catch (std::exception& e) {
                 std::cerr << "tinyply exception: " << e.what() << std::endl;
             }
 
             try {
                 norm_data = file.request_properties_from_element("vertex", { "nx", "ny", "nz" });
-            } catch (std::exception &e) {
+            }
+            catch (std::exception& e) {
                 // std::cerr << "tinyply exception: " << e.what() << std::endl;
             }
 
             try {
                 uv_data = file.request_properties_from_element("vertex", { "u", "v" });
-            } catch (std::exception &e) {
+            }
+            catch (std::exception& e) {
                 // std::cerr << "tinyply exception: " << e.what() << std::endl;
             }
 
             try {
                 face_data = file.request_properties_from_element("face", { "vertex_indices" }, 3);
-            } catch (std::exception &e) {
+            }
+            catch (std::exception& e) {
                 std::cerr << "tinyply exception: " << e.what() << std::endl;
             }
 
@@ -202,17 +206,17 @@ public:
 
             // Copy vertex data
             const size_t numVerts = vert_data->count;
-            std::vector<float> raw_vertices(numVerts * 3);
-            std::memcpy(raw_vertices.data(), vert_data->buffer.get(), sizeof(float) * numVerts * 3);
+            std::vector<double> raw_vertices(numVerts * 3);
+            std::memcpy(raw_vertices.data(), vert_data->buffer.get(), sizeof(double) * numVerts * 3);
 
             const size_t numFaces = face_data->count;
             std::vector<uint32_t> raw_indices(numFaces * 3);
             std::memcpy(raw_indices.data(), face_data->buffer.get(), sizeof(uint32_t) * numFaces * 3);
 
             // Store in mesh
-            for (uint32_t i : raw_indices) {
+            for (int i = 0; i < raw_vertices.size(); i += 3) {
                 Eigen::Vector3f v;
-                v << raw_vertices[i * 3 + 0], raw_vertices[i * 3 + 1], raw_vertices[i * 3 + 2];
+                v << raw_vertices[i + 0], raw_vertices[i + 1], raw_vertices[i + 2];
                 mesh.add_vertex(v);
             }
 
@@ -221,7 +225,8 @@ public:
                 f << raw_indices[i + 0], raw_indices[i + 1], raw_indices[i + 2];
                 mesh.add_face(f);
             }
-        } catch (const std::exception &e) {
+        }
+        catch (const std::exception& e) {
             std::cerr << "Caught tinyply exception: " << e.what() << std::endl;
             return false;
         }
@@ -550,7 +555,7 @@ void read_directory(const fs::path directory, std::map<std::string, fs::path>& f
         }
 
         if (!filtered) {
-            const std::string basename = it->path().filename().stem();
+            const std::string basename = it->path().filename().stem().string();
             files.insert(std::make_pair(basename, it->path()));
         }
     }
@@ -560,11 +565,12 @@ void read_directory(const fs::path directory, std::map<std::string, fs::path>& f
  * Expects one parameter, the path to the corresponding config file in config/.
  */
 int main(int argc, char** argv) {
-    auto &parser = ArgumentParser::getInstance();
+    auto& parser = ArgumentParser::getInstance();
     parser.addArgument("-i", "--input", "", true, "input, either single OFF file or directory containing OFF files where the names correspond to integers (zero padding allowed) and are consecutively numbered starting with zero");
     parser.addArgument("-r", "--reference", "", true, "reference, either single OFF or TXT file or directory containing OFF or TXT files where the names correspond to integers (zero padding allowed) and are consecutively numbered starting with zero (the file names need to correspond to those found in the input directory); for TXT files, accuracy cannot be computed");
     parser.addArgument("-o", "--output", "eval.txt", false, "output file, a TXT file containing accuracy and completeness for each input-reference pair as well as overall averages");
     parser.addArgument("-n", "--n_points", 3000, false, "number points to sample from meshes in order to compute distances");
+    parser.addArgument("-s", "--n_skip", 0, false, "skip every n data, if specified");
 
     if (!parser.parse(argc, argv)) {
         std::cout << parser.helpText() << std::endl;
@@ -591,6 +597,7 @@ int main(int argc, char** argv) {
     const int N_points = parser.getInt("n_points");
     std::cout << "Using " << N_points << " points." << std::endl;
 
+    // Traverse file or folder recursively
     std::map<std::string, fs::path> input_files;
     std::map<std::string, fs::path> reference_files;
 
@@ -630,11 +637,31 @@ int main(int argc, char** argv) {
         std::cout << "Read " << reference_files.size() << " reference files." << std::endl;
     }
 
+    // Skip files
+    const int n_skip = std::max(1, parser.getInt("n_skip"));
+    std::cout << "Skip every " << n_skip << " files." << std::endl;
+
+    std::map<std::string, fs::path> input_files_skip;
+    std::map<std::string, fs::path> reference_files_skip;
+    int skip_count = 0;
+    for (auto it = input_files.begin(); it != input_files.end(); ++it, ++skip_count) {
+        if (skip_count % n_skip == 0) {
+            const std::string basename = it->first;
+            input_files_skip.insert(std::make_pair(basename, input_files[basename]));
+            reference_files_skip.insert(std::make_pair(basename, reference_files[basename]));
+        }
+    }
+
+    input_files = input_files_skip;
+    reference_files = reference_files_skip;
+    std::cout << "Process " << input_files.size() << " input files." << std::endl;
+    std::cout << "Process " << reference_files.size() << " reference files." << std::endl;
+
+    // Compute accuracy and completeness
     std::map<std::string, float> accuracies;
     std::map<std::string, float> completenesses;
 
-    for (auto it = input_files.begin(); it != input_files.end(); it++) {
-
+    for (auto it = input_files.begin(); it != input_files.end(); ++it) {
         const std::string basename = it->first;
         if (reference_files.find(basename) == reference_files.end()) {
             std::cout << "Could not find the reference file corresponding to " << input_files[basename] << "." << std::endl;
@@ -682,7 +709,7 @@ int main(int argc, char** argv) {
 
                 if (success) {
                     accuracies[basename] = accuracy;
-                    std::cout << "Computed accuracy for " << input_file << "." << std::endl;
+                    std::cout << "Computed accuracy for " << input_file << ": " << accuracy << std::endl;
                 } else {
                     std::cout << "Could not compute accuracy for " << input_file << "." << std::endl;
                 }
@@ -699,7 +726,7 @@ int main(int argc, char** argv) {
 
                 if (success) {
                     completenesses[basename] = completeness;
-                    std::cout << "Computed completeness for " << input_file << "." << std::endl;
+                    std::cout << "Computed completeness for " << input_file << ": " << completeness << std::endl;
                 } else {
                     std::cout << "Could not compute completeness for " << input_file << "." << std::endl;
                 }
